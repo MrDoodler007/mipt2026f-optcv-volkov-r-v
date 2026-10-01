@@ -105,7 +105,7 @@ def write_raster(rho_true, phi_true, x_arr, y_arr, w_arr):
 
 @app.cell
 def _(generate_data, generate_matrix, matrix2data):
-    N_DATASETS = 3
+    N_DATASETS = 10
     n = 1
 
     for i in range(N_DATASETS):

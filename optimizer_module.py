@@ -8,6 +8,7 @@ with app.setup:
     import numpy as np
     import matplotlib.pyplot as plt
     import os
+    from scipy.optimize import approx_fprime
 
 
 @app.function
@@ -54,10 +55,20 @@ def L1(rho, phi, x_arr, y_arr, weights=None):
 
 @app.cell
 def _():
+    def gradient_func(rho, phi, x_arr, y_arr, _weights):
+        residuals = normal_residuals(rho, phi, x_arr, y_arr)
+        weights_array = np.ones_like(residuals) if _weights is None else _weights
+        scale = np.sum(weights_array)
+        gradient_rho = -2 * np.sum(weights_array * residuals) / scale
+        tangent_projection = -x_arr * np.sin(phi) + y_arr * np.cos(phi)
+        gradient_phi = 2 * np.sum(weights_array * residuals * tangent_projection) / scale
+        return gradient_rho, gradient_phi
+
+
     def gradient_descent_step(
-        loss_func, rho, phi, rho_step, phi_step, x_arr, y_arr, weights, gradient_func=None
+        loss_func, rho, phi, rho_step, phi_step, x_arr, y_arr, weights
     ):
-        """Perform one gradient descent step with separate parameter rates"""
+        """Perform one gradient descent step with separate learning rates"""
         gradient_rho, gradient_phi = gradient_func(rho, phi, x_arr, y_arr, weights)
         next_rho = rho - rho_step * gradient_rho
         next_phi = phi - phi_step * gradient_phi
@@ -80,8 +91,7 @@ def _():
         iterations,
         rho_step,
         phi_step,
-        algorithm="gradient_descent",
-        gradient_func=None,
+        algorithm="gradient_descent"
     ):
         """Save the optimization history, including the initial point"""
         try:
@@ -96,23 +106,13 @@ def _():
 
         for _ in range(iterations):
             rho, phi, loss = optimization_step(
-                loss_func, rho, phi, rho_step, phi_step, x_arr, y_arr, weights, gradient_func
+                loss_func, rho, phi, rho_step, phi_step, x_arr, y_arr, weights
             )
             history.append((rho, phi))
 
         return np.asarray(history)
 
-
-    def gradient_func(rho, phi, x_arr, y_arr, _weights):
-        residuals = normal_residuals(rho, phi, x_arr, y_arr)
-        weights_array = np.ones_like(residuals) if _weights is None else _weights
-        scale = np.sum(weights_array)
-        gradient_rho = -2 * np.sum(weights_array * residuals) / scale
-        tangent_projection = -x_arr * np.sin(phi) + y_arr * np.cos(phi)
-        gradient_phi = 2 * np.sum(weights_array * residuals * tangent_projection) / scale
-        return gradient_rho, gradient_phi
-
-    return gradient_func, optimize
+    return (optimize,)
 
 
 @app.cell(hide_code=True)
@@ -128,7 +128,7 @@ def _():
     from generator_module import read_pc, read_raster, write_pc, write_raster
 
     datas = []
-    data_num_list = range(1, 4)
+    data_num_list = range(1, 11)
     for data_num in data_num_list:
         _filename = f"pc_rv_{data_num:04d}"
         path = f"mipt2026f-optcv/data/point_cloud/roman/{_filename}.csv"
@@ -148,7 +148,7 @@ def _():
 
 
 @app.cell
-def _(datas, gradient_func, optimize):
+def _(datas, optimize):
     loss_func = SSE
 
     rho_start = -2.0
@@ -158,9 +158,9 @@ def _(datas, gradient_func, optimize):
     phi_step = 0.01
     optimization_algorithm = "gradient_descent"
 
-    histories = []
-    for data in datas:
-        rho_true, phi_true, x_array, y_array, weights, filename = data
+    logs = []
+    for _data in datas:
+        rho_true, phi_true, x_array, y_array, weights, filename = _data
 
         history = optimize(
             loss_func,
@@ -174,21 +174,66 @@ def _(datas, gradient_func, optimize):
             rho_step,
             phi_step,
             optimization_algorithm,
-            gradient_func,
         )
-        histories.append(history)
-
-    from visualize_module import plot_history
-    plot_history(
-        histories[0],
-        rho_true,
+        log = {
+            'history': history,
+            'rho_true': rho_true,
+            'phi_true': phi_true,
+            'filename': filename
+            }
+        logs.append(log)
+    return (
+        filename,
+        logs,
+        loss_func,
         phi_true,
+        rho_true,
+        weights,
         x_array,
         y_array,
-        weights,
-        loss_func,
-        filename,
     )
+
+
+@app.cell(hide_code=True)
+def _():
+    mo.md(r"""
+    ### Визуализация
+    """)
+    return
+
+
+@app.cell
+def _(
+    filename,
+    logs,
+    loss_func,
+    phi_true,
+    rho_true,
+    weights,
+    x_array,
+    y_array,
+):
+    from visualize_module import plot_history
+    if 1:
+        for _log in logs:
+            plot_history(
+                _log['history'],
+                rho_true,
+                phi_true,
+                x_array,
+                y_array,
+                weights,
+                loss_func,
+                filename,
+            )
+    return
+
+
+@app.cell
+def _(logs):
+    from visualize_module import protocol_runs, protocol_stat
+    protocol_runs(logs, "results/pc_runs.csv")
+    protocol_stat("results/pc_runs.csv", "results/pc_stats.csv")
     return
 
 

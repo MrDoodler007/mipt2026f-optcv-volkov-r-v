@@ -8,6 +8,7 @@ with app.setup:
     import numpy as np
     import matplotlib.pyplot as plt
     import os
+    import csv
 
     if 'SSE' not in globals():
         from optimizer_module import SSE
@@ -124,6 +125,43 @@ def plot_history(
     print(f"Начальный RMSE: {RMSE(rho_start, phi_start, x_array, y_array, weights):.4f}")
     print(f"Финальный RMSE: {RMSE(rho_final, phi_final, x_array, y_array, weights):.4f}")
     print(f"Оценка: rho={rho_final:.4f}, phi={phi_final:.4f}")
+
+
+@app.function
+def protocol_runs(logs, path):
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["file", "rho_true", "theta_true", "rho_estimated", "theta_estimated", "rho_error", "theta_error_rad"])
+        for log in logs:
+            _filename = log["filename"]
+            _rho_true = log["rho_true"]
+            _phi_true = log["phi_true"]
+            _rho_est = log["history"][-1, 0]
+            _phi_est = log["history"][-1, 1]
+            _rho_error = _rho_est - _rho_true
+            _phi_error = (_phi_est - _phi_true + np.pi) % (2*np.pi) - np.pi
+            _row = [_filename, _rho_true, _phi_true, _rho_est, _phi_est, _rho_error, _phi_error]
+            writer.writerow(_row)
+
+
+@app.function
+def protocol_stat(path_to_runs, path_to_stat):
+    with open(path_to_runs, "r", newline="", encoding="utf-8") as f:
+        _reader = csv.reader(f)
+        _header = next(_reader)
+        _data = list(_reader)
+    _rho_error = np.array([row[5] for row in _data], dtype=float)
+    _phi_error = np.array([row[6] for row in _data], dtype=float)
+    with open(path_to_stat, "w", newline="", encoding="utf-8") as f:
+        _writer = csv.writer(f)
+        _writer.writerow(["rho_mae", "rho_rmse", "theta_mae", "theta_rmse"])
+        _rho_mae = np.mean(np.abs(_rho_error))
+        _rho_rmse = np.mean(_rho_error ** 2) ** 0.5
+        _phi_mae = np.mean(np.abs(_phi_error))
+        _phi_rmse = np.mean(_phi_error ** 2) ** 0.5
+        _row = [_rho_mae, _rho_rmse, _phi_mae, _phi_rmse]
+        _writer.writerow(_row)
+    print(f"rho_mae={_rho_mae:.3f}, rho_rmse={_rho_rmse:.3f}, phi_mae={_phi_mae:.3f}, phi_rmse={_phi_rmse:.3f}")
 
 
 if __name__ == "__main__":
