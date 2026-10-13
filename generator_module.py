@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.24.2"
+__generated_with = "0.25.1"
 app = marimo.App()
 
 with app.setup:
@@ -10,6 +10,7 @@ with app.setup:
     import csv
     import os
     from pathlib import Path
+    from PIL import Image
 
 
 @app.cell
@@ -59,23 +60,23 @@ def _():
 
         return matrix.astype(int), x_edges, y_edges
 
-
-    def matrix2data(matrix, x_edges, y_edges):
-        """Produce cell-center points and their weights from a matrix"""
-        y_indices, x_indices = np.nonzero(matrix)
-        x_arr = (x_edges[x_indices] + x_edges[x_indices + 1]) / 2
-        y_arr = (y_edges[y_indices] + y_edges[y_indices + 1]) / 2
-        w_arr = matrix[y_indices, x_indices]
-
-        return x_arr, y_arr, w_arr
-
-
-    return generate_data, generate_matrix, line_points, matrix2data
+    return generate_data, generate_matrix, line_points
 
 
 @app.function
-def read_pc(path):
-    with open(path, "r", newline="", encoding="utf-8") as f:
+def matrix2data(matrix, x_edges, y_edges):
+    """Produce cell-center points and their weights from a matrix"""
+    _y_indices, _x_indices = np.nonzero(matrix)
+    _x_arr = (x_edges[_x_indices] + x_edges[_x_indices + 1]) / 2
+    _y_arr = (y_edges[_y_indices] + y_edges[_y_indices + 1]) / 2
+    _w_arr = matrix[_y_indices, _x_indices]
+
+    return _x_arr, _y_arr, _w_arr
+
+
+@app.function
+def read_pc(path_csv, path_repo):
+    with open(path_repo / path_csv, "r", newline="", encoding="utf-8") as f:
         reader = csv.reader(f)
         header = next(reader)
         _rho_true, _phi_true, _ = next(reader)
@@ -84,8 +85,8 @@ def read_pc(path):
 
 
 @app.function
-def write_pc(path, rho_true, phi_true, x_arr, y_arr):
-    with open(path, "w", newline="", encoding="utf-8") as f:
+def write_pc(path_csv, path_repo, rho_true, phi_true, x_arr, y_arr):
+    with open(path_repo / path_csv, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(["x", "y", "w"])
         writer.writerow([rho_true, phi_true , ""])
@@ -94,19 +95,80 @@ def write_pc(path, rho_true, phi_true, x_arr, y_arr):
 
 
 @app.function
-def read_raster(path_csv, path_img):
-    pass
+def read_raster(path_csv: Path, path_img: Path, path_repo: Path):
+    _rho_true, _phi_true = None, None
+    with open(path_repo / path_csv, "r", newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        fieldnames = reader.fieldnames
+        rows = list(reader)
+    
+    for row in rows:
+        if row["image"] == str(path_img):
+            _rho_true, _phi_true = row["rho"], row["theta"]
+
+    _matrix = np.asarray(Image.open(path_repo / path_img))
+    _x0, _y0, _cell_size = 0, 0, 2
+    return float(_rho_true), float(_phi_true), _x0, _y0, _cell_size, _matrix
 
 
 @app.function
-def write_raster(rho_true, phi_true, x_arr, y_arr, w_arr):
-    pass
+def write_raster(
+        path_csv: Path,
+        path_img: Path,
+        path_repo: Path,
+        rho_true,
+        phi_true,
+        matrix,
+        x_0,
+        y_0,
+        cell_size,
+    ):
+    path_csv = path_repo / path_csv
+    if not path_csv.exists():
+        with open(path_csv, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(["image", "rho", "theta"])
+
+    with open(path_csv, "r", newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        fieldnames = reader.fieldnames
+        rows = list(reader)
+    
+    # print(rows)
+    for row in rows:
+        if row["image"] == str(path_img):
+            row["rho"] = rho_true
+            row["theta"] = phi_true
+            # print('replace', path_img)
+            break
+    else:
+        # print('add', path_img)
+        rows.append({"image": path_img, "rho": rho_true, "theta": phi_true})
+
+    with open(path_csv, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        # print(rows)
+        writer.writerows(rows)
+
+    # print()
+    matrix = np.uint8(matrix / np.max(matrix) * 255)
+    Image.fromarray(matrix).convert("L").save(path_repo / path_img)
+
+
+@app.cell(hide_code=True)
+def _():
+    mo.md(r"""
+    ### Генерация данных
+    """)
+    return
 
 
 @app.cell
-def _(generate_data, generate_matrix, matrix2data):
+def _(generate_data, generate_matrix):
     N_DATASETS = 10
     n = 1
+    REPO_PATH = Path(f"mipt2026f-optcv/")
 
     for i in range(N_DATASETS):
         np.random.seed(i)
@@ -128,16 +190,37 @@ def _(generate_data, generate_matrix, matrix2data):
             matrix, x_edges, y_edges
         )
 
-        RES_PATH = Path(f"mipt2026f-optcv/data/point_cloud/roman/pc_rv_{n:04d}.csv")
-        os.makedirs(RES_PATH.parent, exist_ok=True)
-        write_pc(RES_PATH, rho_true, phi_true, x_array, y_array)
+        # Point cloud
+        PC_CSV_PATH = Path(f"data/point_cloud/roman/pc_rv_{n:04d}.csv")
+        os.makedirs((REPO_PATH / PC_CSV_PATH).parent, exist_ok=True)
+        write_pc(PC_CSV_PATH, REPO_PATH, rho_true, phi_true, x_array, y_array)
+
+        # Raster images
+        RASTER_CSV_PATH = Path(f"data/raster/roman/ground_truth.csv")
+        os.makedirs((REPO_PATH / RASTER_CSV_PATH).parent, exist_ok=True)
+        RASTER_IMG_PATH = Path(f"data/raster/roman/images/img_rv_{n:04d}.png")
+        os.makedirs((REPO_PATH / RASTER_IMG_PATH).parent, exist_ok=True)
+        write_raster(
+            RASTER_CSV_PATH,
+            RASTER_IMG_PATH,
+            REPO_PATH,
+            rho_true,
+            phi_true,
+            matrix,
+            None,
+            None,
+            None,
+        )
 
         n += 1
 
 
-    rho_true, phi_true, data = read_pc(RES_PATH)
+    rho_true, phi_true, data = read_pc(PC_CSV_PATH, REPO_PATH)
     print(rho_true, phi_true)
     print(data.shape)
+    rho_true, phi_true, _x0, _y0, _cell_size, matrix = read_raster(RASTER_CSV_PATH, RASTER_IMG_PATH, REPO_PATH)
+    print(rho_true, phi_true)
+    print(matrix.shape)
     return (
         line_length,
         matrix,

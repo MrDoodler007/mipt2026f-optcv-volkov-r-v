@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.24.2"
+__generated_with = "0.25.1"
 app = marimo.App(width="medium")
 
 with app.setup:
@@ -9,6 +9,7 @@ with app.setup:
     import matplotlib.pyplot as plt
     import os
     from scipy.optimize import approx_fprime
+    from pathlib import Path
 
 
 @app.function
@@ -125,16 +126,26 @@ def _():
 
 @app.cell
 def _():
-    from generator_module import read_pc, read_raster, write_pc, write_raster
+    from generator_module import matrix2data, read_pc, read_raster, write_pc, write_raster
+    REPO_PATH = Path(f"mipt2026f-optcv/")
 
     datas = []
     data_num_list = range(1, 11)
     for data_num in data_num_list:
         _filename = f"pc_rv_{data_num:04d}"
-        path = f"mipt2026f-optcv/data/point_cloud/roman/{_filename}.csv"
-
-        _rho_true, _phi_true, _xyw = read_pc(path)
+        path_pc_csv = Path(f"data/point_cloud/roman/{_filename}.csv")
+        _rho_true, _phi_true, _xyw = read_pc(path_pc_csv, REPO_PATH)
         _x_arr, _y_arr, _weights = _xyw[:,0], _xyw[:,1], _xyw[:,2]
+
+        # _filename = f"img_rv_{data_num:04d}"
+        # path_raster_csv = Path(f"data/raster/roman/ground_truth.csv")
+        # path_raster_img = Path(f"data/raster/roman/images/{_filename}.png")
+        # _rho_true, _phi_true, _x0, _y0, _cell_size, _matrix = read_raster(path_raster_csv, path_raster_img, REPO_PATH)
+        # _x_edges = np.arange(_x0 - _cell_size * 0.5, _x0 + _cell_size * (_matrix.shape[1]), _cell_size)
+        # _y_edges = np.arange(_y0 - _cell_size * 0.5, _y0 + _cell_size * (_matrix.shape[0]), _cell_size)
+        # _y_indices, _x_indices = np.nonzero(_matrix)
+        # _x_arr, _y_arr, _weights = matrix2data(_matrix, _x_edges, _y_edges)
+
         datas.append((_rho_true, _phi_true, _x_arr, _y_arr, _weights, _filename))
     return (datas,)
 
