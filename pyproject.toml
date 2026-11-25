@@ -11,6 +11,7 @@ dependencies = [
     "marimo>=0.24.0",
     "matplotlib>=3.11.1",
     "numpy>=2.5.2",
+    "opencv-python>=5.1.0.95",
     "scikit-learn>=1.9.0",
     "scipy>=1.18.1",
 ]
